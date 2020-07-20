@@ -40,6 +40,7 @@ BEGIN
 		$reference_timezone
 		$contact_email
 		$admin_email
+		$producers_email
 
 		$facebook_app_id
 		$facebook_app_secret
@@ -123,6 +124,10 @@ use ProductOpener::Config2;
 		lowercase => 1,
 	},
 	# Same for Spanish, Italian and Portuguese
+	ca => {
+		unaccent => 1,
+		lowercase => 1,
+	},
 	es => {
 		unaccent => 1,
 		lowercase => 1,
@@ -145,6 +150,7 @@ use ProductOpener::Config2;
 %admins = map { $_ => 1 } qw(
 	charlesnepote
 	hangy
+	raphael0202
 	stephane
 	tacinte
 	teolemon
@@ -339,8 +345,8 @@ $robotoff_url = $ProductOpener::Config2::robotoff_url;
 $reference_timezone = 'Europe/Paris';
 
 $contact_email = 'contact@openfoodfacts.org';
+$producers_email = 'producers@openfoodfacts.org';
 $admin_email = 'stephane@openfoodfacts.org';
-
 
 $thumb_size = 100;
 $crop_size = 400;
@@ -501,6 +507,7 @@ improvements
 @product_other_fields = qw(
 	producer_product_id
 	producer_version_id
+	brand_owner
 	quantity_value
 	quantity_unit
 	serving_size_value
@@ -525,6 +532,8 @@ improvements
 	preparation
 	warning
 	data_sources
+	obsolete
+	obsolete_since_date
 );
 
 
@@ -639,7 +648,7 @@ improvements
 $options{import_export_fields_groups} = [
 	["identification", ["code", "producer_product_id", "producer_version_id", "lc", "product_name", "generic_name",
 		"quantity_value_unit", "net_weight_value_unit", "drained_weight_value_unit", "volume_value_unit", "serving_size_value_unit", "packaging",
-		"brands", "categories", "categories_specific", "labels", "labels_specific", "countries", "stores", "obsolete", "obsolete_since_date"]
+		"brands", "brand_owner", "categories", "categories_specific", "labels", "labels_specific", "countries", "stores", "obsolete", "obsolete_since_date"]
 	],
 	["origins", ["origins", "origin", "manufacturing_places", "producer", "emb_codes"]
 	],
@@ -690,6 +699,9 @@ $options{import_export_fields_groups} = [
 
 # allow moving products to other instances of Product Opener on the same server
 # e.g. OFF -> OBF
+
+$options{current_server} = "off";
+
 $options{other_servers} = {
 	obf =>
 	{

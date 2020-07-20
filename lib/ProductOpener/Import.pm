@@ -69,7 +69,6 @@ BEGIN
 	@EXPORT = qw();            # symbols to export by default
 	@EXPORT_OK = qw(
 
-		&clean_and_improve_imported_data
 		&import_csv_file
 		&import_products_categories_from_public_database
 
@@ -95,6 +94,7 @@ use ProductOpener::DataQuality qw/:all/;
 use ProductOpener::Data qw/:all/;
 use ProductOpener::ImportConvert qw/clean_fields clean_weights assign_quantity_from_field/;
 use ProductOpener::Users qw/:all/;
+use ProductOpener::Orgs qw/:all/;
 
 use CGI qw/:cgi :form escapeHTML/;
 use URI::Escape::XS;
@@ -133,6 +133,10 @@ Values are of the form user-[user id] or org-[organization id].
 
 If not set, for databases with private products, it will be constructed from the user_id
 and org_id parameters.
+
+The owner can be overriden if the CSV file contains a org_name field.
+In that case, the owner is set to the value of the org_name field, and
+a new org is created if it does not exist yet.
 
 =head4 csv_file - required
 
@@ -229,6 +233,8 @@ sub import_csv_file($) {
 	$Org_id = $args_ref->{org_id};
 	$Owner_id = get_owner_id($User_id, $Org_id, $args_ref->{owner_id});
 
+	$log->debug("starting import_csv_file", { User_id => $User_id, Org_id => $Org_id, Owner_id => $Owner_id }) if $log->is_debug();
+
 	my %global_values = ();
 	if (defined $args_ref->{global_values}) {
 		%global_values = %{$args_ref->{global_values}};
@@ -279,6 +285,8 @@ sub import_csv_file($) {
 	my %nutrients_edited = ();
 
 	# Read images if supplied
+
+	my @sorted_nutriments = sort keys %Nutriments;
 
 	my $images_ref = {};
 
@@ -427,6 +435,34 @@ sub import_csv_file($) {
 		my @modified_fields;
 
 		my @images_ids;
+				
+		# If the CSV includes an org_name (e.g. from GS1 partyName field)
+		# set the owner of the product to the org_name
+		
+		if ((defined $imported_product_ref->{org_name}) and ($imported_product_ref->{org_name} ne "")) {
+			my $org_id = get_string_id_for_lang("no_language", $imported_product_ref->{org_name});
+			if ($org_id ne "") {
+				$Org_id = $org_id;
+				$Owner_id = "org-" . $org_id;
+				
+				# Create the org if it does not exist yet
+				if (not defined retrieve_org($org_id)) {
+					
+					my $org_ref = create_org($User_id, $imported_product_ref->{org_name});
+			
+					store_org($org_ref);
+					
+					my $admin_mail_body = <<EMAIL
+user_id: $User_id
+org_id: $org_id
+org_name: $imported_product_ref->{org_name}
+EMAIL
+;
+					send_email_to_admin("Import - Created org - user: $User_id - org: " . $Org_id, $admin_mail_body);
+				}
+			}
+		}
+		
 
 		my $code = $imported_product_ref->{code};
 		$code = normalize_code($code);
@@ -529,8 +565,32 @@ sub import_csv_file($) {
 				next;
 			}
 		}
+		
+		# If we are importing on the public platform, check if the product exists on other servers
+		# (e.g. Open Beauty Facts, Open Products Facts)
+		
+		my $product_ref;
+		
+		if ((defined $options{other_servers})
+			and not ((defined $server_options{private_products}) and ($server_options{private_products}))) {
+			foreach my $server (sort keys %{$options{other_servers}}) {
+				next if ($server eq $options{current_server});
+								
+				$product_ref = product_exists_on_other_server($server, $product_id);
+				if ($product_ref) {
+					# Indicate to store_product() that the product is on another server
+					$product_ref->{server} = $server;
+					# Indicate to Images.pm functions that the product is on another server
+					$product_id = $server . ":" . $product_id;
+					$log->debug("product exists on another server", { code => $code, server => $server, product_id => $product_id }) if $log->is_debug();
+					last;
+				}
+			}
+		}
 
-		my $product_ref = product_exists($product_id); # returns 0 if not
+		if (not $product_ref) {
+			$product_ref = product_exists($product_id); # returns 0 if not
+		}
 
 		my $product_comment = $args_ref->{comment};
 		if ((defined $imported_product_ref->{comment}) and ($imported_product_ref->{comment} ne "")) {
@@ -604,13 +664,33 @@ sub import_csv_file($) {
 			}
 		}
 
-		# Record fields that are set by the owner
-		if ((defined $args_ref->{owner_id}) and ($args_ref->{owner_id} =~ /^org-/)) {
+		# Record fields that are set by the owner, when the owner is a producer org
+		# (and not an app, a database or label org)
+		if ((defined $Owner_id) and ($Owner_id =~ /^org-/)
+			and ($Owner_id !~ /^org-app-/)
+			and ($Owner_id !~ /^org-database-/)
+			and ($Owner_id !~ /^org-label-/) ) {
 			defined $product_ref->{owner_fields} or $product_ref->{owner_fields} = {};
-			$product_ref->{owner} = $args_ref->{owner_id};
+			$product_ref->{owner} = $Owner_id;
 			$product_ref->{owners_tags} = $product_ref->{owner};
 		}
 
+		# We can have source specific fields of the form : sources_fields:org-database-usda:fdc_category
+		# Transfer them directly
+		foreach my $field (sort keys %$imported_product_ref) {
+			if ($field =~ /^sources_fields:([a-z0-9-]+):/) {
+				my $source_id = $1;
+				my $source_field = $';
+				defined $product_ref->{sources_fields} or $product_ref->{sources_fields} = {};
+				defined $product_ref->{sources_fields}{$source_id} or $product_ref->{sources_fields}{$source_id} = {};
+				if ($imported_product_ref->{$field} ne $product_ref->{sources_fields}{$source_id}{$source_field}) {
+					$product_ref->{sources_fields}{$source_id}{$source_field} = $imported_product_ref->{$field};
+					$modified++;
+				}
+			}
+		}
+
+		# Go through all the possible fields that can be imported
 		foreach my $field (@param_fields) {
 
 			# fields suffixed with _if_not_existing are loaded only if the product does not have an existing value
@@ -621,10 +701,14 @@ sub import_csv_file($) {
 				$imported_product_ref->{$field} = $imported_product_ref->{$field . "_if_not_existing"};
 			}
 
-			# For labels and categories, we can have columns like labels:Bio with values like 1, Y, Yes
-			# concatenate them to the labels field
 			if (defined $tags_fields{$field}) {
 				foreach my $subfield (sort keys %{$imported_product_ref}) {
+					
+					next if ((not defined $imported_product_ref->{$subfield}) or ($imported_product_ref->{$subfield} eq "")); 
+					
+					# For labels and categories, we can have columns like labels:Bio with values like 1, Y, Yes
+					# concatenate them to the labels field
+					
 					if ($subfield =~ /^$field:/) {
 						my $tag_name = $';
 						if ($imported_product_ref->{$subfield} =~ /^\s*(1|y|yes|o|oui)\s*$/i) {
@@ -635,6 +719,21 @@ sub import_csv_file($) {
 								$imported_product_ref->{$field} = $tag_name;
 							}
 						}
+					}
+					
+					# [tags type]_if_match_in_taxonomy : contains candidate values that we import
+					# only if we have a matching taxonomy entry
+					# there may be multiple columns for the same field: [tags type]_if_match_in_taxonomy.2 etc.
+					
+					if (($subfield =~ /^${field}_if_match_in_taxonomy/)
+						and (exists_taxonomy_tag($field,
+							canonicalize_taxonomy_tag($imported_product_ref->{lc}, $field, $imported_product_ref->{$subfield})))) {
+						if (defined $imported_product_ref->{$field}) {
+							$imported_product_ref->{$field} .= "," . $imported_product_ref->{$subfield};
+						}
+						else {
+							$imported_product_ref->{$field} = $imported_product_ref->{$subfield};
+						}						
 					}
 				}
 			}
@@ -651,10 +750,16 @@ sub import_csv_file($) {
 					$stats{products_with_ingredients}{$code} = 1;
 				}
 
-				if ((defined $args_ref->{owner_id}) and ($args_ref->{owner_id} =~ /^org-/)
+				if ((defined $Owner_id) and ($Owner_id =~ /^org-/)
 					and ($field ne "imports")	# "imports" contains the timestamp of each import
 					) {
-					$product_ref->{owner_fields}{$field} = $time;
+
+					# Don't set owner_fields for apps, labels and databases, only for producers
+					if (($Owner_id !~ /^org-app-/)
+						and ($Owner_id !~ /^org-database-/)
+						and ($Owner_id !~ /^org-label-/)) {
+						$product_ref->{owner_fields}{$field} = $time;
+					}
 
 					# Save the imported value, before it is cleaned etc. so that we can avoid reimporting data that has been manually changed afterwards
 					if ((not defined $product_ref->{$field . "_imported"}) or ($product_ref->{$field . "_imported"} ne $imported_product_ref->{$field})) {
@@ -867,7 +972,7 @@ sub import_csv_file($) {
 		my $nutrition_data_per = $imported_product_ref->{nutrition_data_per};
 		my $nutrition_data_prepared_per = $imported_product_ref->{nutrition_data_prepared_per};
 
-		foreach my $nutriment (@{$nutriments_tables{europe}}, "nutrition-score-fr-producer") {
+		foreach my $nutriment (@sorted_nutriments) {
 
 			next if $nutriment =~ /^\#/;
 
@@ -922,19 +1027,41 @@ sub import_csv_file($) {
 						$unit = $imported_product_ref->{$nid . $type . $per . "_unit"};
 					}
 
+					# Energy can be: 852KJ/ 203Kcal
 					# calcium_100g_value_unit = 50 mg
+					# 10g
 					if (not defined $values{$type}) {
-						if ((defined $imported_product_ref->{$nid . $type . $per . "_value_unit"})
-							and ($imported_product_ref->{$nid . $type . $per . "_value_unit"} =~ /^(.*) ([a-z]+)$/)) {
-							$values{$type} = $1;
-							$unit = $2;
+						if (defined $imported_product_ref->{$nid . $type . $per . "_value_unit"}) {
+
+							# Assign energy-kj and energy-kcal values from energy field
+
+							if (($nid eq "energy") and ($imported_product_ref->{$nid . $type . $per . "_value_unit"} =~ /\b([0-9]+)(\s*)kJ/i)) {
+								if (not defined $imported_product_ref->{$nid . "-j" . $type . $per . "_value_unit"}) {
+									$imported_product_ref->{$nid . "-kj" . $type . $per . "_value_unit"} = $1 . " kJ";
+								}
+							}
+							if (($nid eq "energy") and ($imported_product_ref->{$nid . $type . $per . "_value_unit"} =~ /\b([0-9]+)(\s*)kcal/i)) {
+								if (not defined $imported_product_ref->{$nid . "-kcal" . $type . $per . "_value_unit"}) {
+									$imported_product_ref->{$nid . "-kcal" . $type . $per . "_value_unit"} = $1 . " kcal";
+								}
+							}
+
+							if ($imported_product_ref->{$nid . $type . $per . "_value_unit"} =~ /^(~?<?>?=?\s?([0-9]*(\.|,))?[0-9]+)(\s*)([a-zµ%]+)$/i) {
+								$values{$type} = $1;
+								$unit = $5;
+							}
+							# We might have only a number even if the field is set to value_unit
+							# in that case, use the default unit
+							elsif ($imported_product_ref->{$nid . $type . $per . "_value_unit"} =~ /^(([0-9]*(\.|,))?[0-9]+)(\s*)$/i) {
+								$values{$type} = $1;
+							}
 						}
 					}
 
 					# calcium_100g_value_in_mcg
 
 					if (not defined $values{$type}) {
-						foreach my $u ('kj', 'kcal', 'kg', 'g', 'mg', 'mcg', 'l', 'dl', 'cl', 'ml') {
+						foreach my $u ('kj', 'kcal', 'kg', 'g', 'mg', 'mcg', 'l', 'dl', 'cl', 'ml', 'iu') {
 							my $value_in_u = $imported_product_ref->{$nid . $type . $per . "_value" . "_in_" . $u};
 							if ((defined $value_in_u) and ($value_in_u ne "")) {
 								$values{$type} = $value_in_u;
@@ -953,6 +1080,19 @@ sub import_csv_file($) {
 					$unit = '% vol';
 				}
 
+				# Standardize units
+				if (defined $unit) {
+					if ($unit eq "kj") {
+						$unit = "kJ";
+					}
+					elsif ($unit eq "mcg") {
+						$unit = "µg";
+					}
+					elsif ($unit eq "iu") {
+						$unit = "IU";
+					}
+				}
+
 				my $modifier = undef;
 
 				(defined $values{$type}) and normalize_nutriment_value_and_modifier(\$values{$type}, \$modifier);
@@ -968,7 +1108,10 @@ sub import_csv_file($) {
 
 					assign_nid_modifier_value_and_unit($product_ref, $nid . $type, $modifier, $values{$type}, $unit);
 
-					if ((defined $args_ref->{owner_id}) and ($args_ref->{owner_id} =~ /^org-/)) {
+					if ((defined $Owner_id) and ($Owner_id =~ /^org-/)
+						and ($Owner_id !~ /^org-app-/)
+						and ($Owner_id !~ /^org-database-/)
+						and ($Owner_id !~ /^org-label-/)) {
 						$product_ref->{owner_fields}{$nid} = $time;
 					}
 				}
@@ -985,6 +1128,7 @@ sub import_csv_file($) {
 					$stats{products_nutrition_changed}{$code} = 1;
 					$modified++;
 					$nutrients_edited{$code}++;
+					push @modified_fields, "nutrients.$field";
 				}
 				elsif ((defined $product_ref->{nutriments}{$field}) and ($product_ref->{nutriments}{$field} ne "")
 					and ((not defined $original_values{$field})	or ($original_values{$field} eq ''))) {
@@ -993,12 +1137,14 @@ sub import_csv_file($) {
 					$stats{products_nutrition_added}{$code} = 1;
 					$modified++;
 					$nutrients_edited{$code}++;
+					push @modified_fields, "nutrients.$field";
 				}
 				elsif ((not defined $product_ref->{nutriments}{$field}) and (defined $original_values{$field}) and ($original_values{$field} ne '')) {
 					$log->debug("deleted nutrient value", { field => $field, old => $original_values{$field} }) if $log->is_debug();
 					$stats{products_nutrition_updated}{$code} = 1;
 					$modified++;
 					$nutrients_edited{$code}++;
+					push @modified_fields, "nutrients.$field";
 				}
 			}
 		}
@@ -1217,10 +1363,11 @@ sub import_csv_file($) {
 
 			# image field can have forms like:
 			# image_front_url_fr
+			# image_front_fr_url
 			# image_other_url
 			# image_other_url.2	: a second "other" photo
 
-			next if $field !~ /^image_(front|ingredients|nutrition|other)_url/;
+			next if $field !~ /^image_((front|ingredients|nutrition|other)(_[a-z]{2})?)_url/;
 
 			my $imagefield = $1 . $'; # e.g. image_front_url_fr -> front_fr
 
@@ -1308,7 +1455,8 @@ sub import_csv_file($) {
 
 			$stats{products_with_images}{$code} = 1;
 
-			if (not $args_ref->{test}) {
+			if ((not $args_ref->{test})
+				and (not ((defined $args_ref->{do_not_upload_images}) and ($args_ref->{do_not_upload_images})))) {
 
 				$log->debug("uploading images for product", { code => $code }) if $log->is_debug();
 
@@ -1350,8 +1498,9 @@ sub import_csv_file($) {
 
 						# upload a photo
 						my $imgid;
-						my $return_code = process_image_upload($product_id, "$file", $args_ref->{user_id}, undef, $product_comment, \$imgid);
-						$log->debug("process_image_upload", { file => $file, imagefield => $imagefield, code => $code, return_code => $return_code, imgid => $imgid, imagefield_with_lc => $imagefield_with_lc }) if $log->is_debug();
+						my $debug;
+						my $return_code = process_image_upload($product_id, "$file", $args_ref->{user_id}, undef, $product_comment, \$imgid, \$debug);
+						$log->debug("process_image_upload", { file => $file, imagefield => $imagefield, code => $code, return_code => $return_code, imgid => $imgid, imagefield_with_lc => $imagefield_with_lc, debug => $debug }) if $log->is_debug();
 
 						if (($imgid > 0) and ($imgid > $current_max_imgid)) {
 							$stats{products_images_added}{$code} = 1;
@@ -1370,8 +1519,8 @@ sub import_csv_file($) {
 
 						# select the photo
 						if (($imagefield_with_lc =~ /front|ingredients|nutrition/) and
-							((not $args_ref->{only_select_not_existing_images})
-								or ((not defined $product_ref->{images}) or (not defined $product_ref->{images}{$imagefield_with_lc})) )){
+							( (not ((defined $args_ref->{only_select_not_existing_images}) and ($args_ref->{only_select_not_existing_images})))
+								or ((not defined $product_ref->{images}) or (not defined $product_ref->{images}{$imagefield_with_lc})) ) ) {
 
 							if (($imgid > 0) and ($imgid > $current_max_imgid)) {
 
@@ -1385,17 +1534,17 @@ sub import_csv_file($) {
 								$log->debug("returned imgid $imgid not greater than the previous max imgid: $current_max_imgid", { imgid => $imgid, current_max_imgid => $current_max_imgid }) if $log->is_debug();
 
 								# overwrite already selected images
+								# if the selected image is not the same
+								# or if we have non null crop coordinates that differ
 								if (($imgid > 0)
 									and (exists $product_ref->{images})
 									and (exists $product_ref->{images}{$imagefield_with_lc})
 									and (($product_ref->{images}{$imagefield_with_lc}{imgid} != $imgid)
-										or ($product_ref->{images}{$imagefield_with_lc}{x1} != $x1)
-										or ($product_ref->{images}{$imagefield_with_lc}{x2} != $x2)
-										or ($product_ref->{images}{$imagefield_with_lc}{y1} != $y1)
-										or ($product_ref->{images}{$imagefield_with_lc}{y2} != $y2)
+										or (($x1 > 1) and ($product_ref->{images}{$imagefield_with_lc}{x1} != $x1))
+										or (($x2 > 1) and ($product_ref->{images}{$imagefield_with_lc}{x2} != $x2))
+										or (($y1 > 1) and ($product_ref->{images}{$imagefield_with_lc}{y1} != $y1))
+										or (($y2 > 1) and ($product_ref->{images}{$imagefield_with_lc}{y2} != $y2))
 										or ($product_ref->{images}{$imagefield_with_lc}{angle} != $angle)
-										or ($product_ref->{images}{$imagefield_with_lc}{normalize} ne $normalize)
-										or ($product_ref->{images}{$imagefield_with_lc}{white_magic} ne $white_magic)
 										)
 									) {
 									$log->debug("re-assigning image imgid to imagefield_with_lc", { code => $code, imgid => $imgid, imagefield_with_lc => $imagefield_with_lc, x1 => $x1, y1 => $y1, x2 => $x2, y2 => $y2, angle => $angle, normalize => $normalize, white_magic => $white_magic }) if $log->is_debug();

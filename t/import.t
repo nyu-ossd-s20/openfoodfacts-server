@@ -6,8 +6,8 @@ use warnings;
 use utf8;
 
 use Test::More;
-#use Log::Any::Adapter 'TAP', filter => "none";
-use Log::Any::Adapter 'TAP', filter => "info";
+use Log::Any::Adapter 'TAP', filter => "none";
+#use Log::Any::Adapter 'TAP', filter => "info";
 
 use ProductOpener::Products qw/:all/;
 use ProductOpener::Tags qw/:all/;
@@ -185,6 +185,30 @@ foreach my $test_ref (@tests) {
         {lc => "es", product_name_es => "Natillas de soja sabor vainilla", brands => "Carrefour, carrefour bio"},
 ],
 
+	# combine serving_size, serving_size_value, serving_size_unit (e.g. US import)
+
+[
+	{ serving_size_value => "10", serving_size_unit => "g" },
+	{ serving_size => "10 g", serving_size_value => "10", serving_size_unit => "g" },
+],
+
+[
+        { serving_size => "1 biscuit", serving_size_value => "10", serving_size_unit => "g" },
+        { serving_size => "1 biscuit (10 g)", serving_size_value => "10", serving_size_unit => "g" },
+],
+
+[
+        { serving_size_value_unit => "1 biscuit", serving_size_value => "10", serving_size_unit => "g" },
+        { serving_size_value_unit => "1 biscuit", serving_size => "1 biscuit (10 g)", serving_size_value => "10", serving_size_unit => "g" },
+],
+
+
+[
+        { serving_size => "1 biscuit (10 g)", serving_size_value => "10", serving_size_unit => "g" },
+        { serving_size => "1 biscuit (10 g)", serving_size_value => "10", serving_size_unit => "g" },
+],
+
+
 
 );
 
@@ -195,5 +219,12 @@ foreach my $test_ref (@tests) {
 
 }
 
+# test match_specific_taxonomy_tags / match_labels_in_product_name
+
+$product_ref = { lc => "fr", product_name_fr => "NUGGETS DE POULET, poulet élevé sans traitement antibiotique"};
+
+match_labels_in_product_name($product_ref);
+
+is($product_ref->{labels}, undef) or diag explain $product_ref->{labels};
 
 done_testing();

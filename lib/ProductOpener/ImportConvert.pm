@@ -113,6 +113,7 @@ use JSON::PP;
 use Time::Local;
 use Data::Dumper;
 use Text::CSV;
+use HTML::Entities qw(decode_entities);
 
 %fields = ();
 @fields = ();
@@ -200,6 +201,10 @@ sub assign_value($$$) {
 		# language field?
 		elsif (($field =~ /^(.+)_(\w\w)$/) and (defined $language_fields{$1})) {
 			$product_ref->{$field} .= "\n" . $value;
+		}
+		# we have a different value that we cannot append, replace it
+		else {
+			$product_ref->{$field} = $value;
 		}
 	}
 	else {
@@ -363,7 +368,7 @@ sub match_specific_taxonomy_tags($$$$) {
 
 	my $tag_lc = $product_ref->{lc};
 
-	$log->trace("match_specific_taxonomy_tags - start", { source => $source, target => $target, tag_lc => $tag_lc, tags_ref => $tags_ref}) if $log->is_trace();
+	$log->trace("match_specific_taxonomy_tags - start", { source => $source, source_value => $product_ref->{$source}, target => $target, tag_lc => $tag_lc, tags_ref => $tags_ref}) if $log->is_trace();
 
 	if ((defined $product_ref->{$source}) and ($product_ref->{$source} ne "")) {
 
@@ -401,9 +406,9 @@ sub match_specific_taxonomy_tags($$$$) {
 				$log->trace("match_specific_taxonomy_tags - regexp", { tag_regexp => $tag_regexp}) if $log->is_trace();
 				$log->trace("match_specific_taxonomy_tags - source value", { source_value => $product_ref->{$source}}) if $log->is_trace();
 
-				if ($product_ref->{$source} =~ /\b${tag_regexp}\b/i) {
+				if ($product_ref->{$source} =~ /\b(${tag_regexp})\b/i) {
+					$log->info("match_specific_taxonomy_tags: assigning value", { matching => $1, source => $source, value => $tagid, target => $target}) if $log->is_info();					
 					assign_value($product_ref, $target, $tagid);
-					$log->info("match_specific_taxonomy_tags: assigning value", { source => $source, value => $tagid, target => $target}) if $log->is_info();
 				}
 			}
 		}
@@ -535,21 +540,35 @@ sub clean_weights($) {
 			assign_value($product_ref, $field . "_unit", "g");
 		}
 
-		# combine value and unit
-		if ((not defined $product_ref->{$field})
-			and (defined $product_ref->{$field . "_value"})
-			and ($product_ref->{$field . "_value"} ne "")
-			and (defined $product_ref->{$field . "_unit"}) ) {
-
-			assign_value($product_ref, $field, $product_ref->{$field . "_value"} . " " . $product_ref->{$field . "_unit"});
-		}
-
 		# We may be passed quantity_value_unit, in that case assign it to quantity
 		if ((not defined $product_ref->{$field})
 			and (defined $product_ref->{$field . "_value_unit"})
 			and ($product_ref->{$field . "_value_unit"} ne "")) {
 
 			assign_value($product_ref, $field, $product_ref->{$field . "_value_unit"});
+		}
+
+		# for quantity and serving_size, we might have 3 values:
+		# - a quantity with a non normalized unit ("2 biscuits)
+		# - a value and a unit ("30 g")
+		# in this case, we can combine them: "2 biscuits (30 g)"
+
+		if ((($field eq "quantity") or ($field eq "serving_size"))
+			and (defined $product_ref->{$field}) and ($product_ref->{$field} ne "")
+			and (defined $product_ref->{$field . "_value"}) and ($product_ref->{$field . "_value"} ne "")
+			and (defined $product_ref->{$field . "_unit"})
+
+			# check we have not already combined the value and unit
+			and (not (index($product_ref->{$field}, $product_ref->{$field . "_value"} . " " . $product_ref->{$field . "_unit"}) >= 0))	) {
+
+			assign_value($product_ref, $field, $product_ref->{$field} . " (" . $product_ref->{$field . "_value"} . " " . $product_ref->{$field . "_unit"} . ")" );
+		}
+		elsif ((not defined $product_ref->{$field})
+			and (defined $product_ref->{$field . "_value"})
+			and ($product_ref->{$field . "_value"} ne "")
+			and (defined $product_ref->{$field . "_unit"}) ) {
+
+			assign_value($product_ref, $field, $product_ref->{$field . "_value"} . " " . $product_ref->{$field . "_unit"});
 		}
 
 		if (defined $product_ref->{$field}) {
@@ -580,6 +599,9 @@ sub clean_weights($) {
 
 			# remove the e
 			$product_ref->{$field} =~ s/ e\b//g;
+
+			# 1 units (with units in plural)
+			$product_ref->{$field} =~ s/^1 (unit|piece|pièce)s$/1 $1/ig;
 		}
 
 	}
@@ -736,7 +758,9 @@ sub clean_fields($) {
 	foreach my $field (keys %$product_ref) {
 
 		# Split the generic name from the ingredient list
-		if ($field =~ /^ingredients_text_(\w\w)/) {
+		# Warning: this should be done only once, on the producers platform, when we import product data from a producer
+		# It should not be done again when we import product data from the producers platform to the public database
+		if (($server_options{producers_platform}) and ($field =~ /^ingredients_text_(\w\w)/)) {
 			my $ingredients_lc = $1;
 			split_generic_name_from_ingredients($product_ref, $ingredients_lc);
 		}
@@ -756,6 +780,12 @@ sub clean_fields($) {
 	foreach my $field (keys %$product_ref) {
 
 		$log->debug("clean_fields", { field=>$field, value=>$product_ref->{$field} }) if $log->is_debug();
+
+		# HTML entities
+		# e.g. P&acirc;tes alimentaires cuites aromatis&eacute;es au curcuma
+		if ($product_ref->{$field} =~ /\&/) {
+			$product_ref->{$field} = decode_entities($product_ref->{$field});
+		}
 
 		$product_ref->{$field} =~ s/(\&nbsp)|(\xA0)/ /g;
 		$product_ref->{$field} =~ s/’/'/g;

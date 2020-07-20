@@ -82,9 +82,12 @@ if ($type eq 'search_or_add') {
 
 	# barcode in image?
 	my $filename;
-	if ((not defined $code) or ($code !~ /^\d+$/)) {
+	if ((not defined $code) or ($code eq "")) {
 		$code = process_search_image_form(\$filename);
 	}
+	elsif ($code !~ /^\d{8,24}$/) {
+		display_error($Lang{invalid_barcode}{$lang}, 403);
+	}	
 
 	my $r = Apache2::RequestUtil->request();
 	my $method = $r->method();
@@ -132,7 +135,8 @@ if ($type eq 'search_or_add') {
 			# If we got a barcode image, upload it
 			if (defined $filename) {
 				my $imgid;
-				process_image_upload($product_ref->{_id},$filename,$User_id, time(),'image with barcode from web site Add product button',\$imgid);
+				my $debug;
+				process_image_upload($product_ref->{_id},$filename,$User_id, time(),'image with barcode from web site Add product button',\$imgid, \$debug);
 			}
 		}
 	}
@@ -167,7 +171,10 @@ if ($type eq 'search_or_add') {
 else {
 	# We should have a code
 	if ((not defined $code) or ($code eq '')) {
-		display_error($Lang{no_barcode}{$lang}, 403);
+		display_error($Lang{missing_barcode}{$lang}, 403);
+	}
+	elsif ($code !~ /^\d{8,24}$/) {
+		display_error($Lang{invalid_barcode}{$lang}, 403);
 	}
 	else {
 		if ( ((defined $server_options{private_products}) and ($server_options{private_products}))
@@ -244,6 +251,12 @@ my @fields = @ProductOpener::Config::product_fields;
 
 if ($admin) {
 	push @fields, "environment_impact_level";
+
+	# Let admins edit any other fields
+	if (defined param("fields")) {
+		push @fields, split(/,/, param("fields"));
+	}
+
 }
 
 if (($action eq 'process') and (($type eq 'add') or ($type eq 'edit'))) {
@@ -266,9 +279,9 @@ if (($action eq 'process') and (($type eq 'add') or ($type eq 'edit'))) {
 	exists $product_ref->{new_server} and delete $product_ref->{new_server};
 
 	# 26/01/2017 - disallow barcode changes until we fix bug #677
-	if ($User{moderator} and (defined param('new_code'))) {
+	if ($User{moderator} and (defined param("new_code")) and (param("new_code") ne "")) {
 
-		change_product_server_or_code($product_ref, param('new_code'), \@errors);
+		change_product_server_or_code($product_ref, param("new_code"), \@errors);
 		$code = $product_ref->{code};
 	}
 
@@ -431,7 +444,7 @@ if (($action eq 'process') and (($type eq 'add') or ($type eq 'edit'))) {
 	# Food category rules for sweeetened/sugared beverages
 	# French PNNS groups from categories
 
-	if ($server_domain =~ /openfoodfacts/) {
+	if ((defined $options{product_type}) and ($options{product_type} eq "food")) {
 		$log->debug("Food::special_process_product") if $log->is_debug();
 		ProductOpener::Food::special_process_product($product_ref);
 	}
@@ -839,8 +852,8 @@ HTML
 ;
 
 	$scripts .= <<HTML
+<script type="text/javascript" src="/js/dist/webcomponentsjs/webcomponents-loader.js"></script>
 <script type="text/javascript" src="/js/dist/cropper.js"></script>
-<script type="text/javascript" src="/js/jquery.tagsinput.20160520/jquery.tagsinput.min.js"></script>
 <script type="text/javascript" src="/js/jquery.form.js"></script>
 <script type="text/javascript" src="/js/dist/tagify.min.js"></script>
 <script type="text/javascript" src="/js/dist/jquery.iframe-transport.js"></script>
@@ -1715,6 +1728,11 @@ HTML
 			$value = mmoll_to_unit($product_ref->{nutriments}{$nid}, $unit);
 			$valuep = mmoll_to_unit($product_ref->{nutriments}{$nidp}, $unit);
 		}
+		elsif ($nid eq 'energy-kcal') {
+			# energy-kcal is already in kcal
+			$value = $product_ref->{nutriments}{$nid};
+			$valuep = $product_ref->{nutriments}{$nidp};
+		}
 		else {
 			$value = g_to_unit($product_ref->{nutriments}{$nid}, $unit);
 			$valuep = g_to_unit($product_ref->{nutriments}{$nidp}, $unit);
@@ -1743,6 +1761,10 @@ HTML
 					$product_ref->{nutriments}{$nidp . "_modifier"} eq '~' and $valuep = "~ $valuep";
 				}
 			}
+		}
+
+		if (lc($unit) eq "mcg") {
+			$unit = "µg";
 		}
 
 		my $disabled_backup = $disabled;
@@ -1793,13 +1815,13 @@ HTML
 
 			if (((exists $Nutriments{$nid}) and (exists $Nutriments{$nid}{dv}) and ($Nutriments{$nid}{dv} > 0))
 				or ($nid =~ /^new_/)
-				or ($unit eq '% DV')) {
+				or (uc($unit) eq '% DV')) {
 				push @units, '% DV';
 			}
 			if (((exists $Nutriments{$nid}) and (exists $Nutriments{$nid}{iu}) and ($Nutriments{$nid}{iu} > 0))
 				or ($nid =~ /^new_/)
-				or ($unit eq 'IU')
-				or ($unit eq 'UI')) {
+				or (uc($unit) eq 'IU')
+				or (uc($unit) eq 'UI')) {
 				push @units, 'IU';
 			}
 
@@ -1828,7 +1850,7 @@ HTML
 
 			foreach my $u (@units) {
 				my $selected = '';
-				if ($unit eq $u) {
+				if (lc($unit) eq lc($u)) {
 					$selected = 'selected="selected" ';
 				}
 				$input .= <<HTML

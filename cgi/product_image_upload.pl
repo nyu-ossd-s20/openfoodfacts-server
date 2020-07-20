@@ -197,13 +197,14 @@ if ($imagefield) {
 		}
 
 		my $imgid;
+		my $debug_string;
 
 		my $imagefield_or_filename = $imagefield;
 		(defined $tmp_filename) and $imagefield_or_filename = $tmp_filename;
 
-		my $imgid_returncode = process_image_upload($product_id, $imagefield_or_filename, $User_id, time(), "image upload", \$imgid);
+		my $imgid_returncode = process_image_upload($product_id, $imagefield_or_filename, $User_id, time(), "image upload", \$imgid, \$debug_string);
 
-		$log->debug("after process_image_upload", { imgid => $imgid, imagefield => $imagefield, $imgid_returncode => $imgid_returncode }) if $log->is_debug();
+		$log->debug("after process_image_upload", { imgid => $imgid, imagefield => $imagefield, $imgid_returncode => $imgid_returncode, debug_string => $debug_string }) if $log->is_debug();
 
 		my $data;
 		my $response_ref;
@@ -226,9 +227,8 @@ if ($imagefield) {
 				}
 			}
 
-			# Debug message passed back in $imgid?
-			if ((defined $imgid) and ($imgid !~ /^\d/)) {
-				$response_ref->{debug} = $imgid;
+			if (defined $debug_string) {
+				$response_ref->{debug} = $debug_string;
 			}
 
 		}
@@ -269,6 +269,8 @@ if ($imagefield) {
 			if ((($imagefield =~ /^front_/) or ($imagefield =~ /^ingredients_/) or ($imagefield =~ /^nutrition_/))
 				# Changed 2020-03-05: overwrite already selected images
 				# and ((not defined $product_ref->{images}{$imagefield}) or ($select_image))
+				# Changed 2020-04-20: don't overwrite selected images if the source is the product edit form
+				and ((not defined param('source')) or (param('source') ne "product_edit_form") or (not defined $product_ref->{images}{$imagefield}))
 				) {
 				$log->debug("selecting image", { imgid => $imgid, imagefield => $imagefield}) if $log->is_debug();
 				process_image_crop($product_id, $imagefield, $imgid, 0, undef, undef, -1, -1, -1, -1, "full");

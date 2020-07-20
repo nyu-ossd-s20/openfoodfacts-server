@@ -152,11 +152,22 @@ my @tests = (
 		]
 	],
 
+	[ { lc => "es", ingredients_text => "pimientos amarillos deshidratados" }, 
+		[
+			{
+				'id' => 'en:yellow-bell-pepper',
+				'processing' => 'en:dehydrated',
+				'text' => 'pimientos amarillos'
+			}
+		]
+	],
+	
 ##################################################################
 #
 #                           F R E N C H ( F R )
 #
 ##################################################################
+
 	[ { lc => "fr", ingredients_text => "dés de jambon frits, tomates crues en dés, 
 			tomates bio pré-cuites, poudre de noisettes, banane tamisé"}, 
 		[
@@ -208,6 +219,24 @@ my @tests = (
 			}
 		]
 	],
+
+# test for jus and concentré with extra "de"
+#	[ { lc => "fr", ingredients_text => "jus concentré de baies de sureau"},
+#		[
+#		]
+#	],
+
+##################################################################
+#
+#                           F I N N I SH ( F I )
+	#
+##################################################################
+# test for mehu inside an ingredient
+
+#	[ { lc => "fi", ingredients_text => "hedelmätäysmehutiivisteet"}, 
+#		[
+#		]
+#	],
 
 ##################################################################
 #
@@ -330,22 +359,22 @@ my @tests = (
 		[
 			{
 				'id' => 'en:shallot',
-				'processing' => 'en:cooked',
+				'processing' => 'de:gegart',
 				'text' => 'Schalotte'
 			},
 			{
 				'id' => 'en:hazelnut',
-				'processing' => 'en:cooked',
-				'text' => "haselnüsse"
+				'processing' => 'de:gegart',
+				'text' => "haseln\x{fc}sse"
 			},
 			{
 				'id' => 'en:almond',
-				'processing' => "en:cooked",
+				'processing' => 'de:gegart',
 				'text' => 'mandeln'
 			},
 			{
 				'id' => 'en:passion-fruit',
-				'processing' => 'en:cooked',
+				'processing' => 'de:gegart',
 				'text' => 'passionsfrucht'
 			},
 			{
@@ -410,27 +439,27 @@ my @tests = (
 		[
 			{
 				'id' => 'en:shallot',
-				'processing' => 'de:gepufft',
+				'processing' => 'en:puffed',
 				'text' => 'Schalotte'
 			},
 			{
 				'id' => 'en:hazelnut',
-				'processing' => 'de:gepufft',
-				'text' => "haselnüsse"
+				'processing' => 'en:puffed',
+				'text' => "haseln\x{fc}sse"
 			},
 			{
 				'id' => 'en:passion-fruit',
-				'processing' => 'de:gepufft',
+				'processing' => 'en:puffed',
 				'text' => 'passionsfrucht'
 			},
 			{
 				'id' => 'en:passion-fruit',
-				'processing' => 'de:gepufft',
+				'processing' => 'en:puffed',
 				'text' => 'passionsfrucht'
 			},
 			{
 				'id' => 'en:gherkin',
-				'processing' => 'de:gepufft',
+				'processing' => 'en:puffed',
 				'text' => 'gurken'
 			}
 		]
@@ -559,14 +588,14 @@ my @tests = (
 	],
 
 # de:konzentriert (and children) and synonyms
-	[ { lc => "de", ingredients_text => "konzentriert shallot, konzentrierter haselnüsse, konzentrierte mandeln, konzentriertes acerola, 
+	[ { lc => "de", ingredients_text => "konzentriert schalotte, konzentrierter haselnüsse, konzentrierte mandeln, konzentriertes acerolakirschen, 
 		zweifach konzentriert, 2 fach konzentriert, doppelt konzentriertes, zweifach konzentriertes, 2-fach konzentriert, dreifach konzentriert, 
 		200fach konzentriertes, eingekochter" }, 
 		[
 			{
 				'id' => 'en:shallot',
 				'processing' => 'en:concentrated',
-				'text' => 'shallot'
+				'text' => 'schalotte'
 			},
 			{
 				'id' => 'en:hazelnut',
@@ -581,7 +610,7 @@ my @tests = (
 			{
 				'id' => 'en:acerola',
 				'processing' => 'en:concentrated',
-				'text' => 'acerola'
+				'text' => 'acerolakirschen'
 			},
 			{
 			    'id' => 'de:zweifach konzentriert',
@@ -621,7 +650,7 @@ my @tests = (
 # de:zerkleinert and variants
 	[ { lc => "de", ingredients_text => "Schalotte zerkleinert, zerkleinerte haselnüsse, zerkleinerter mandeln, zerkleinertes passionsfrucht, 
 						gurken grob zerkleinert, 
-						acerola fein zerkleinert, fein zerkleinerte spinat, 
+						acerolakirschen fein zerkleinert, fein zerkleinerte spinat, 
 						zwiebel zum teil fein zerkleinert,
 						haselnüsse feinst zerkleinert,
 						überwiegend feinst zerkleinert Feigen" }, 
@@ -654,7 +683,7 @@ my @tests = (
 						  {
 						    'id' => 'en:acerola',
 						    'processing' => 'de:fein-zerkleinert',
-						    'text' => 'acerola'
+						    'text' => 'acerolakirschen'
 						  },
 						  {
 						    'id' => 'en:spinach',
@@ -685,7 +714,7 @@ my @tests = (
 		[
 			{
 				'id' => 'en:hazelnut',
-				'processing' => 'en:roasted, en:chopped',
+				'processing' => 'en:toasted, en:chopped',
 				'text' => "haseln\x{fc}sse"
 			},
 			{
@@ -741,7 +770,7 @@ my @tests = (
 	# Test for de:getrocknet and synonyms
 		[ { lc => "de", ingredients_text => "Schalotte getrocknet, getrocknete mandeln, getrockneter zwiebel, 
 				 haselnüsse in getrockneter form, halbgetrocknete spinat, halbgetrocknet gurken, Feigen halb getrocknet, 
-				 Holunder gefriergetrocknet, gefriergetrocknete Papaya, gefriergetrocknetes Kiwi, sonnengetrocknet Ananas, 
+				 Holunder gefriergetrocknet, gefriergetrocknete Papaye, gefriergetrocknetes Kiwi, sonnengetrocknet Ananas, 
 				 sonnengetrocknete Pflaumen, an der Sonne getrocknete Grapefruit, Guaven luftgetrocknet, luftgetrockneter Hagebutten, 
 				 Traube sprühgetrocknet, sprühgetrockneter Tamarinde" }, 
 				[
@@ -788,7 +817,7 @@ my @tests = (
 				  {
 				    'id' => 'en:papaya',
 				    'processing' => 'en:freeze-dried',
-				    'text' => 'Papaya'
+				    'text' => 'Papaye'
 				  },
 				  {
 				    'id' => 'en:kiwi',
@@ -850,32 +879,32 @@ my @tests = (
 		[
 			{
 				'id' => "de:hartk\x{e4}se",
-				'processing' => 'de:gesalzen',
+				'processing' => 'en:salted',
 				'text' => "hartk\x{e4}se"
 			},
 			{
 				'id' => 'en:hazelnut',
-				'processing' => 'de:gesalzen',
+				'processing' => 'en:salted',
 				'text' => "haseln\x{fc}sse"
 			},
 			{
 				'id' => 'en:hazelnut',
-				'processing' => 'de:gesalzen',
+				'processing' => 'en:salted',
 				'text' => "haseln\x{fc}sse"
 			},
 			{
 				'id' => 'en:hazelnut',
-				'processing' => 'de:gesalzen',
+				'processing' => 'en:salted',
 				'text' => 'haselnusskerne'
 			},
 			{
 				'id' => 'en:shallot',
-				'processing' => 'de:ungesalzen',
+				'processing' => 'en:unsalted',
 				'text' => 'schalotte'
  			},
 			{
 				'id' => 'en:almond',
-				'processing' => 'de:ungesalzen',
+				'processing' => 'en:unsalted',
 				'text' => 'mandeln'
 			}
 		]
@@ -898,7 +927,7 @@ my @tests = (
 		[
 		  	{
 				'id' => 'en:shallot',
-				'processing' => 'de:eingelegt',
+				'processing' => 'en:pickled',
 				'text' => 'Schalotte'
 			}
 		]
@@ -935,7 +964,7 @@ my @tests = (
 			},
 			{
 				'id' => 'en:hazelnut',
-				'processing' => 'en:roasted, en:chopped',
+				'processing' => 'en:toasted, en:chopped',
 				'text' => "haseln\x{fc}sse"
 			},
 			{
@@ -1173,6 +1202,46 @@ zwiebel in würfel geschnitten, mandeln in würfel" },
     'text' => 'panceta'
   }
 
+]
+	],
+
+	# ingredient with (processing) in parenthesis
+	[ { lc => "en", ingredients_text => "garlic (powdered)",},
+[
+  {
+    'id' => 'en:garlic',
+    'processing' => 'en:powdered',
+    'text' => 'garlic'
+  }
+]
+	],
+	[ { lc => "fr", ingredients_text => "piment (en poudre)"},
+[
+  {
+    'id' => 'en:chili-pepper',
+    'processing' => 'en:powdered',
+    'text' => 'piment'
+  }
+]
+	],
+
+	[ { lc => "en", ingredients_text => "pasteurized eggs" },
+[
+  {
+    'id' => 'en:egg',
+    'processing' => 'en:pasteurised',
+    'text' => 'eggs'
+  }
+]
+	],
+
+	[ { lc => "es", ingredients_text => "pimientos amarillos deshidratados" },
+[
+  {
+    'id' => 'en:yellow-bell-pepper',
+    'processing' => 'en:dehydrated',
+    'text' => 'pimientos amarillos'
+  }
 ]
 	],
 

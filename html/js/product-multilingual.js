@@ -1,7 +1,7 @@
 // This file is part of Product Opener.
 //
 // Product Opener
-// Copyright (C) 2011-2019 Association Open Food Facts
+// Copyright (C) 2011-2020 Association Open Food Facts
 // Contact: contact@openfoodfacts.org
 // Address: 21 rue des Iles, 94100 Saint-Maur des Fossés, France
 //
@@ -174,7 +174,7 @@ function add_line() {
 	$(this).unbind("change");
 	$(this).unbind("autocompletechange");
 
-	var id = parseInt($("#new_max").val()) + 1;
+	var id = parseInt($("#new_max").val(), 10) + 1;
 	$("#new_max").val(id);
 
 	var newline = $("#nutriment_new_0_tr").clone();
@@ -200,45 +200,6 @@ function add_line() {
 
 	$(document).foundation('equalizer', 'reflow');
 }
-
-function upload_image (imagefield) {
-
- $('.img_input[name!="imgupload_' + imagefield + '"]').prop("disabled", true);
- $('.img_input[name="imgupload_' + imagefield + '"]').hide();
- $('div[id="uploadimagemsg_' + imagefield +'"]').html('<img src="/images/misc/loading2.gif" /> ' + lang().product_js_uploading_image);
- $('div[id="uploadimagemsg_' + imagefield +'"]').show();
-
- $("#product_form").ajaxSubmit({
-
-  url: "/cgi/product_image_upload.pl",
-  data: { imagefield: imagefield },
-  dataType: 'json',
-  beforeSubmit: function() {
-   //o.dataType = 'json';
-  },
-  success: function(data) {
-	//alert(data.status);
-	//alert("input:hidden[name=\"" + data.imagefield + ".imgid\"]");
-	$('div[id="uploadimagemsg_' + imagefield +'"]').html(lang().product_js_image_received);
-	$("input:hidden[name=\"" + data.imagefield + ".imgid\"]").val(data.image.imgid);
-	$([]).selectcrop('add_image',data.image);
-	$(".select_crop").selectcrop('show');
-
-	$('#' + imagefield + '_' + data.image.imgid).addClass("ui-selected").siblings().removeClass("ui-selected");
-	change_image(imagefield, data.image.imgid);
-
-  },
-  error : function() {
-	$('div[id="uploadimagemsg_' + imagefield +'"]').html(lang().product_js_image_upload_error);
-  },
-  complete: function() {
-	$('.img_input').prop("disabled", false).show();
-  }
- });
-}
-
-
-
 
 function update_image(imagefield) {
 
@@ -277,7 +238,7 @@ function rotate_image(event) {
 		console.log("selection - image - w:" + w + ' - h:' + h);
 
 
-		if (angle == 90) {
+		if (angle === 90) {
 			selection.x = h - y2;
 			selection.y = x1;
 			selection.width = y2 - y1;
@@ -655,7 +616,7 @@ function get_recents(tagfield) {
 
 	initializeTagifyInputs();
 
-  if ($.cookie('use_low_res_images') !== undefined) {
+  if (typeof $.cookie('use_low_res_images') !== "undefined") {
       use_low_res_images = true;
   }
 
@@ -798,7 +759,7 @@ function get_recents(tagfield) {
         sequentialUploads: true,
         dataType: 'json',
         url: '/cgi/product_image_upload.pl',
-		formData : [{name: 'jqueryfileupload', value: 1}, {name: 'imagefield', value: imagefield}, {name: 'code', value: code} ],
+		formData : [{name: 'jqueryfileupload', value: 1}, {name: 'imagefield', value: imagefield}, {name: 'code', value: code}, {name: 'source', value: 'product_edit_form'}],
 		resizeMaxWidth : 2000,
 		resizeMaxHeight : 2000,
 

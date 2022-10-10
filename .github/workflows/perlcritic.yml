@@ -10,7 +10,7 @@ jobs:
   perlcritic:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3.1.0
     - name: Perl Critic
       uses: Difegue/action-perlcritic@1.0.0
       env:
